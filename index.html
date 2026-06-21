@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Med.Report | Minimalist Document Analysis</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PDF.js for client-side text extraction and rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <!-- Marked.js for rendering markdown in chat -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        medical: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            900: '#0c4a6e',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Scrollbar for a cleaner UI */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background-color: #475569; }
+        
+        /* Smooth transitions */
+        body, main, div, aside, section { transition: background-color 0.3s ease, border-color 0.3s ease; }
+
+        /* API connected glow */
+        .glow-green {
+            box-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
+            background-color: #22c55e;
+        }
+        
+        /* Markdown Chat Styles */
+        .markdown-body p { margin-bottom: 0.5rem; }
+        .markdown-body strong { font-weight: 600; color: inherit; }
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+        .markdown-body ol { list-style-type: decimal; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-950 dark:text-gray-200 h-screen flex flex-col overflow-hidden selection:bg-medical-500 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="h-16 flex items-center justify-between px-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0">
+        <div class="flex items-center gap-2">
+            <!-- Logo Icon -->
+            <svg class="w-6 h-6 text-medical-600 dark:text-medical-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <h1 class="text-xl font-semibold tracking-tight text-gray-900 dark:text-white">Med.Report</h1>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <!-- API Key Input area -->
+            <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-1.5 border border-gray-200 dark:border-gray-700">
+                <!-- Status Indicator Dot -->
+                <div id="api-status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-400 transition-all duration-300"></div>
+                
+                <input type="password" id="api-key-input" placeholder="Enter Gemini API Key..." 
+                    class="bg-transparent border-none outline-none text-sm w-48 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500">
+            </div>
+
+            <!-- Dark Mode Toggle -->
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400">
+                <svg id="theme-icon-dark" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>
+                <svg id="theme-icon-light" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- LEFT: Document Sidebar -->
+        <aside class="w-1/4 max-w-xs flex flex-col border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-800">
+                <label for="file-upload" class="flex items-center justify-center gap-2 w-full py-2 px-4 bg-medical-600 hover:bg-medical-500 text-white rounded-lg cursor-pointer transition-colors shadow-sm text-sm font-medium">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                    </svg>
+                    Upload Documents
+                </label>
+                <input type="file" id="file-upload" class="hidden" multiple accept="application/pdf">
+            </div>
+            
+            <div class="p-4 flex-1 overflow-y-auto">
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Uploaded Files</h2>
+                <ul id="file-list" class="space-y-2">
+                    <li id="empty-file-state" class="text-sm text-gray-400 dark:text-gray-500 italic text-center py-4">No documents uploaded.</li>
+                    <!-- Dynamic File Items go here -->
+                </ul>
+            </div>
+        </aside>
+
+        <!-- CENTER: Secure PDF Canvas Viewer -->
+        <section class="flex-1 bg-gray-100 dark:bg-gray-950 flex flex-col relative overflow-hidden">
+            <!-- Toolbar for PDF Navigation & Zoom (hidden when no PDF loaded) -->
+            <div id="pdf-toolbar" class="hidden h-12 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 items-center justify-between shrink-0 z-20">
+                <div class="flex items-center gap-2">
+                    <span id="pdf-doc-title" class="text-xs font-semibold text-gray-600 dark:text-gray-400 truncate max-w-xs">Document</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button id="btn-zoom-out" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+                    </button>
+                    <span id="zoom-level-text" class="text-xs font-medium text-gray-600 dark:text-gray-400 min-w-[32px] text-center">100%</span>
+                    <button id="btn-zoom-in" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    </button>
+                </div>
+                <div class="text-xs text-gray-500" id="pdf-page-count-display">0 pages</div>
+            </div>
+
+            <!-- Loader / Empty Placeholder -->
+            <div id="pdf-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-600 z-10">
+                <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <p class="text-sm">Select a document to view</p>
+            </div>
+
+            <!-- PDF Scroll Workspace (Direct Canvas Render) -->
+            <div id="pdf-scroll-container" class="flex-1 overflow-y-auto p-6 flex flex-col items-center gap-6 hidden">
+                <!-- Canvases will be rendered here sequentially -->
+            </div>
+        </section>
+
+        <!-- RIGHT: Chatbot Sidebar -->
+        <aside class="w-1/3 min-w-[320px] max-w-md flex flex-col border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
+                <h2 class="text-sm font-semibold flex items-center gap-2">
+                    <svg class="w-4 h-4 text-medical-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+                    </svg>
+                    Analysis Assistant
+                </h2>
+                <!-- Context Selector -->
+                <select id="chat-context-select" class="text-xs bg-gray-100 dark:bg-gray-800 border-none rounded-md py-1.5 px-2 outline-none text-gray-700 dark:text-gray-300 max-w-[140px] truncate focus:ring-1 focus:ring-medical-500 cursor-pointer">
+                    <option value="all">All Documents</option>
+                </select>
+            </div>
+            
+            <!-- Chat History -->
+            <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Welcome Message -->
+                <div class="flex gap-3">
+                    <div class="w-8 h-8 rounded-full bg-medical-100 dark:bg-medical-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5 text-medical-600 dark:text-medical-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                    </div>
+                    <div class="bg-gray-100 dark:bg-gray-800 rounded-lg rounded-tl-none p-3 text-sm text-gray-800 dark:text-gray-200">
+                        Hello. I am <strong>Med.ReportLLM</strong>, an AI master at explaining research papers and medical documents in layman's language.<br><br>
+                        You can ask me general questions or upload your documents, select your context at the top, and get specific insights with exact page citations!
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 shrink-0">
+                <form id="chat-form" class="relative flex items-center">
+                    <textarea id="chat-input" rows="1" placeholder="Ask Med.ReportLLM anything..." 
+                        class="w-full bg-gray-100 dark:bg-gray-800 border-none rounded-2xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500 resize-none overflow-hidden" style="min-height: 44px; max-height: 120px;"></textarea>
+                    <button type="submit" class="absolute right-2 p-2 text-medical-600 hover:text-medical-800 dark:text-medical-500 dark:hover:text-medical-400 transition-colors rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                        <svg class="w-5 h-5 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+    </main>
+
+    <!-- Application Logic -->
+    <script>
+        // Setup PDF.js worker
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // State Management
+        const state = {
+            files: [], // { id, name, arrayBuffer, pdfDocument, extractedText: [{page, text}] }
+            currentFileId: null,
+            zoomScale: 1.2
+        };
+
+        // DOM Elements
+        const DOM = {
+            apiKeyInput: document.getElementById('api-key-input'),
+            apiStatusDot: document.getElementById('api-status-dot'),
+            themeToggle: document.getElementById('theme-toggle'),
+            htmlRoot: document.documentElement,
+            fileUpload: document.getElementById('file-upload'),
+            fileList: document.getElementById('file-list'),
+            emptyFileState: document.getElementById('empty-file-state'),
+            pdfPlaceholder: document.getElementById('pdf-placeholder'),
+            pdfToolbar: document.getElementById('pdf-toolbar'),
+            pdfDocTitle: document.getElementById('pdf-doc-title'),
+            pdfPageCountDisplay: document.getElementById('pdf-page-count-display'),
+            pdfScrollContainer: document.getElementById('pdf-scroll-container'),
+            zoomLevelText: document.getElementById('zoom-level-text'),
+            btnZoomIn: document.getElementById('btn-zoom-in'),
+            btnZoomOut: document.getElementById('btn-zoom-out'),
+            chatHistory: document.getElementById('chat-history'),
+            chatForm: document.getElementById('chat-form'),
+            chatInput: document.getElementById('chat-input'),
+            chatContextSelect: document.getElementById('chat-context-select')
+        };
+
+        // --- Theme & API Key Logic ---
+        
+        DOM.themeToggle.addEventListener('click', () => {
+            DOM.htmlRoot.classList.toggle('dark');
+            const isDark = DOM.htmlRoot.classList.contains('dark');
+            document.getElementById('theme-icon-dark').classList.toggle('hidden', !isDark);
+            document.getElementById('theme-icon-light').classList.toggle('hidden', isDark);
+        });
+
+        DOM.apiKeyInput.addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            if (val.length > 20) {
+                DOM.apiStatusDot.classList.add('glow-green');
+                DOM.apiStatusDot.classList.remove('bg-gray-400');
+            } else {
+                DOM.apiStatusDot.classList.remove('glow-green');
+                DOM.apiStatusDot.classList.add('bg-gray-400');
+            }
+        });
+
+        // --- Document Management & Extraction Logic ---
+
+        DOM.fileUpload.addEventListener('change', async (e) => {
+            const uploadedFiles = Array.from(e.target.files);
+            if (uploadedFiles.length === 0) return;
+
+            DOM.emptyFileState.style.display = 'none';
+
+            for (const file of uploadedFiles) {
+                const fileId = 'file-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                const arrayBuffer = await file.arrayBuffer();
+                
+                const fileObj = {
+                    id: fileId,
+                    name: file.name,
+                    arrayBuffer: arrayBuffer,
+                    pdfDocument: null,
+                    extractedText: null
+                };
+                
+                state.files.push(fileObj);
+                renderFileItem(fileObj);
+                
+                // Load & Extract Text (Using pdf.js on ArrayBuffer instead of objectUrls to bypass origin issues)
+                try {
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    fileObj.pdfDocument = pdf;
+                    
+                    let pages = [];
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const content = await page.getTextContent();
+                        const text = content.items.map(item => item.str).join(' ');
+                        pages.push({ page: i, text: text });
+                    }
+                    fileObj.extractedText = pages;
+                    
+                    updateFileStatus(fileId, 'ready');
+                    
+                    // Add to Context Selector
+                    const option = document.createElement('option');
+                    option.value = fileId;
+                    option.textContent = fileObj.name;
+                    DOM.chatContextSelect.appendChild(option);
+
+                } catch (error) {
+                    console.error("Error parsing PDF:", error);
+                    updateFileStatus(fileId, 'error');
+                }
+            }
+            
+            // Auto-select the first newly uploaded file
+            if (uploadedFiles.length > 0) {
+                selectFile(state.files[state.files.length - uploadedFiles.length].id);
+            }
+            
+            DOM.fileUpload.value = ''; // Reset input
+        });
+
+        function renderFileItem(fileObj) {
+            const li = document.createElement('li');
+            li.id = fileObj.id;
+            li.className = 'group flex items-center justify-between p-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border border-transparent';
+            
+            li.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <svg class="w-5 h-5 text-red-500 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 2h8a2 2 0 012 2v16a2 2 0 01-2 2H8a2 2 0 01-2-2V4a2 2 0 012-2zm0 2v16h8V4H8zM7 9h10v2H7V9zm0 4h10v2H7v-2z"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title="${fileObj.name}">${fileObj.name}</span>
+                </div>
+                <div id="status-${fileObj.id}" class="shrink-0 ml-2">
+                    <svg class="animate-spin w-4 h-4 text-medical-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+            `;
+            
+            li.addEventListener('click', () => selectFile(fileObj.id));
+            DOM.fileList.appendChild(li);
+        }
+
+        function updateFileStatus(fileId, status) {
+            const statusDiv = document.getElementById(`status-${fileId}`);
+            if (!statusDiv) return;
+            
+            if (status === 'ready') {
+                statusDiv.innerHTML = `<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+            } else if (status === 'error') {
+                statusDiv.innerHTML = `<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+            }
+        }
+
+        // --- Custom Canvas-based PDF Rendering ---
+
+        async function selectFile(fileId) {
+            state.currentFileId = fileId;
+            const fileObj = state.files.find(f => f.id === fileId);
+            if (!fileObj) return;
+
+            // Highlight selected file in list
+            Array.from(DOM.fileList.children).forEach(child => {
+                if(child.id === 'empty-file-state') return;
+                child.classList.remove('bg-gray-100', 'dark:bg-gray-800', 'border-gray-200', 'dark:border-gray-700');
+                child.classList.add('border-transparent');
+                
+                if (child.id === fileId) {
+                    child.classList.add('bg-gray-100', 'dark:bg-gray-800', 'border-gray-200', 'dark:border-gray-700');
+                    child.classList.remove('border-transparent');
+                }
+            });
+
+            // Update PDF viewer layout
+            DOM.pdfPlaceholder.classList.add('hidden');
+            DOM.pdfToolbar.classList.remove('hidden');
+            DOM.pdfToolbar.classList.add('flex');
+            DOM.pdfScrollContainer.classList.remove('hidden');
+
+            DOM.pdfDocTitle.textContent = fileObj.name;
+            
+            if (fileObj.pdfDocument) {
+                renderPdfPages(fileObj.pdfDocument);
+            } else {
+                // If it is still processing, show loader inside workspace
+                DOM.pdfScrollContainer.innerHTML = `
+                    <div class="flex flex-col items-center gap-2 text-gray-500 mt-20">
+                        <svg class="animate-spin w-8 h-8 text-medical-600" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="text-sm font-medium">Extracting medical report pages...</p>
+                    </div>
+                `;
+                // Poll until processed
+                const pollInterval = setInterval(() => {
+                    const currentObj = state.files.find(f => f.id === fileId);
+                    if (currentObj && currentObj.pdfDocument) {
+                        clearInterval(pollInterval);
+                        if (state.currentFileId === fileId) {
+                            renderPdfPages(currentObj.pdfDocument);
+                        }
+                    }
+                }, 500);
+            }
+        }
+
+        async function renderPdfPages(pdf) {
+            DOM.pdfScrollContainer.innerHTML = ''; // Clear prior elements
+            DOM.pdfPageCountDisplay.textContent = `${pdf.numPages} pages`;
+            
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'relative bg-white dark:bg-gray-900 p-2 shadow-lg rounded-md border border-gray-200 dark:border-gray-800 flex flex-col items-center';
+                
+                const canvas = document.createElement('canvas');
+                canvas.className = 'max-w-full';
+                
+                const pageLabel = document.createElement('span');
+                pageLabel.className = 'text-[10px] text-gray-400 mt-2 block select-none';
+                pageLabel.innerText = `Page ${pageNum} of ${pdf.numPages}`;
+                
+                pageContainer.appendChild(canvas);
+                pageContainer.appendChild(pageLabel);
+                DOM.pdfScrollContainer.appendChild(pageContainer);
+
+                // Start rendering page on Canvas
+                renderPageToCanvas(pdf, pageNum, canvas);
+            }
+        }
+
+        async function renderPageToCanvas(pdf, pageNum, canvas) {
+            try {
+                const page = await pdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: state.zoomScale });
+                const context = canvas.getContext('2d');
+                
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                await page.render(renderContext).promise;
+            } catch (err) {
+                console.error("Canvas rendering failed:", err);
+            }
+        }
+
+        // Zoom Operations
+        DOM.btnZoomIn.addEventListener('click', () => {
+            if (state.zoomScale < 3.0) {
+                state.zoomScale += 0.2;
+                DOM.zoomLevelText.innerText = `${Math.round(state.zoomScale * 100)}%`;
+                const fileObj = state.files.find(f => f.id === state.currentFileId);
+                if (fileObj && fileObj.pdfDocument) {
+                    renderPdfPages(fileObj.pdfDocument);
+                }
+            }
+        });
+
+        DOM.btnZoomOut.addEventListener('click', () => {
+            if (state.zoomScale > 0.6) {
+                state.zoomScale -= 0.2;
+                DOM.zoomLevelText.innerText = `${Math.round(state.zoomScale * 100)}%`;
+                const fileObj = state.files.find(f => f.id === state.currentFileId);
+                if (fileObj && fileObj.pdfDocument) {
+                    renderPdfPages(fileObj.pdfDocument);
+                }
+            }
+        });
+
+        // --- Chat & AI Logic ---
+
+        // Auto-resize textarea
+        DOM.chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        DOM.chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                DOM.chatForm.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        DOM.chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = DOM.chatInput.value.trim();
+            if (!message) return;
+
+            appendMessage('user', message);
+            DOM.chatInput.value = '';
+            DOM.chatInput.style.height = 'auto';
+            
+            const typingId = appendTypingIndicator();
+
+            try {
+                const response = await callGeminiAPI(message);
+                removeTypingIndicator(typingId);
+                appendMessage('ai', response);
+            } catch (error) {
+                removeTypingIndicator(typingId);
+                appendMessage('error', `Error: ${error.message}`);
+            }
+        });
+
+        function appendMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = 'flex gap-3 ' + (role === 'user' ? 'flex-row-reverse' : '');
+            
+            let iconHtml = '';
+            let contentClasses = '';
+
+            if (role === 'user') {
+                iconHtml = `
+                    <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
+                        <svg class="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                    </div>`;
+                contentClasses = 'bg-medical-600 text-white rounded-lg rounded-tr-none p-3 text-sm';
+            } else if (role === 'ai') {
+                iconHtml = `
+                    <div class="w-8 h-8 rounded-full bg-medical-100 dark:bg-medical-900 flex items-center justify-center shrink-0 text-xs font-bold text-medical-600 dark:text-medical-400">
+                        AI
+                    </div>`;
+                contentClasses = 'bg-gray-100 dark:bg-gray-800 rounded-lg rounded-tl-none p-3 text-sm text-gray-800 dark:text-gray-200 markdown-body overflow-x-auto';
+            } else {
+                // Error
+                contentClasses = 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm';
+            }
+
+            const formattedText = role === 'ai' ? marked.parse(text) : escapeHtml(text);
+
+            div.innerHTML = `
+                ${role !== 'error' ? iconHtml : ''}
+                <div class="${contentClasses} max-w-[85%] leading-relaxed">${formattedText}</div>
+            `;
+            
+            DOM.chatHistory.appendChild(div);
+            DOM.chatHistory.scrollTop = DOM.chatHistory.scrollHeight;
+        }
+
+        function appendTypingIndicator() {
+            const id = 'typing-' + Date.now();
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = 'flex gap-3';
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-medical-100 dark:bg-medical-900 flex items-center justify-center shrink-0 text-xs font-bold text-medical-600 dark:text-medical-400">
+                    AI
+                </div>
+                <div class="bg-gray-100 dark:bg-gray-800 rounded-lg rounded-tl-none p-3 flex items-center gap-1 w-16 h-[44px]">
+                    <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0ms"></div>
+                    <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
+                    <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+                </div>
+            `;
+            DOM.chatHistory.appendChild(div);
+            DOM.chatHistory.scrollTop = DOM.chatHistory.scrollHeight;
+            return id;
+        }
+
+        function removeTypingIndicator(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        async function callGeminiAPI(userQuery) {
+            const apiKey = DOM.apiKeyInput.value.trim();
+            if (!apiKey) {
+                throw new Error("Please enter your Gemini API key in the top bar.");
+            }
+
+            // Build Context based on the selected dropdown value
+            const selectedContext = DOM.chatContextSelect.value;
+            let contextData = "DOCUMENTS CONTEXT:\n\n";
+            let docsAdded = 0;
+            
+            for (const file of state.files) {
+                // If it's processed AND matches the selection (or "all" is selected)
+                if (file.extractedText && (selectedContext === 'all' || selectedContext === file.id)) {
+                    contextData += `--- Document Name: ${file.name} ---\n`;
+                    file.extractedText.forEach(p => {
+                        contextData += `[Page ${p.page}]: ${p.text}\n\n`;
+                    });
+                    docsAdded++;
+                }
+            }
+
+            if (docsAdded === 0) {
+                contextData += "(No documents uploaded or selected for context yet.)\n";
+            }
+
+            const systemPrompt = `You are Med.ReportLLM, an AI master at explaining complex research papers and clinical documents in layman's language.
+
+Your instructions:
+1. Answer the user's questions clearly, concisely, and in easy-to-understand layman's terms.
+2. If the user's query relates to the provided documents, you MUST base your answer on the provided context and cite the specific page numbers using the format: "[Document Name, Page X]" at the end of relevant sentences or bullet points.
+3. AGENTIC CAPABILITY: If the user asks a general question, or if the answer cannot be found in the provided text, you should use your extensive general knowledge to answer it. You are not strictly confined to the documents. If you answer from outside the documents, gently clarify that this information comes from your general knowledge.
+4. Structure your output using markdown (bullet points, bold text for emphasis) to make it highly readable.
+
+${contextData}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            // Using the production-ready Gemini 2.5 Flash API endpoint
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+            // Exponential Backoff implementation
+            let retries = 0;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+
+            while (retries < 6) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json().catch(()=>({}));
+                        throw new Error(errData.error?.message || `HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.candidates && data.candidates[0].content.parts[0].text) {
+                        return data.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("Unexpected API response format.");
+                    }
+                    
+                } catch (error) {
+                    if (retries < 5 && !error.message.includes("API key")) { // Don't retry auth errors
+                        await new Promise(r => setTimeout(r, delays[retries]));
+                        retries++;
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
